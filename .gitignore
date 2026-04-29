@@ -1,0 +1,24 @@
+# --- Terraform ---
+.terraform/
+*.tfstate
+*.tfstate.*
+
+# --- Variables (keep example only) ---
+terraform.tfvars
+
+# --- SSH Keys ---
+terraform/ec2-key
+!terraform/ec2-key.pub
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+build/
+dist/
+
+# --- OS Files ---
+.DS_Store
+Thumbs.db
