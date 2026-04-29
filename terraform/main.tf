@@ -166,6 +166,17 @@ EOF
 }
 
 # -------------------------
+# ELASTIC IP (STATIC PUBLIC IP)
+# -------------------------
+resource "aws_eip" "app_eip" {
+  instance = aws_instance.app.id
+
+  tags = {
+    Name = "app-eip"
+  }
+}
+
+# -------------------------
 # ALB
 # -------------------------
 resource "aws_lb" "alb" {
