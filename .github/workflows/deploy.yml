@@ -35,7 +35,7 @@ jobs:
     # Build image
     - name: Build Docker Image
       run: |
-        docker build -t $ECR_REPO .
+        docker build -t $ECR_REPO ./app
         docker tag $ECR_REPO:latest $ECR_REGISTRY/$ECR_REPO:latest
 
     # Push image
