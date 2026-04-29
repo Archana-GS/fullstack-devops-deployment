@@ -156,10 +156,12 @@ unzip awscliv2.zip
 
 usermod -aG docker ubuntu
 
-aws ecr get-login-password --region ${var.region} | docker login --username AWS --password-stdin ${var.ecr_repo_url}
+# FIXED ECR LOGIN
+aws ecr get-login-password --region ${var.region} | docker login --username AWS --password-stdin 786769475575.dkr.ecr.ap-south-1.amazonaws.com
 
+# PULL & RUN
 docker pull ${var.ecr_repo_url}:latest
-docker run -d -p 80:5000 ${var.ecr_repo_url}:latest
+docker run -d --restart=always -p 80:5000 ${var.ecr_repo_url}:latest
 EOF
 }
 
