@@ -15,11 +15,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. Checkout code
+    # 1️⃣ Checkout code
     - name: Checkout
       uses: actions/checkout@v3
 
-    # 2. Configure AWS credentials
+    # 2️⃣ Configure AWS
     - name: Configure AWS
       uses: aws-actions/configure-aws-credentials@v2
       with:
@@ -27,28 +27,28 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    # 3. Login to ECR
+    # 3️⃣ Login to ECR
     - name: Login to ECR
       run: |
         aws ecr get-login-password --region $AWS_REGION \
         | docker login --username AWS --password-stdin $ECR_REGISTRY
 
-    # 4. Build Docker image
+    # 4️⃣ Build Docker image
     - name: Build Docker Image
       run: |
         docker build -t $ECR_REPO ./app
         docker tag $ECR_REPO:latest $ECR_REGISTRY/$ECR_REPO:latest
 
-    # 5. Push image to ECR
+    # 5️⃣ Push to ECR
     - name: Push to ECR
       run: |
         docker push $ECR_REGISTRY/$ECR_REPO:latest
 
-    # 6. Deploy to EC2
+    # 6️⃣ Deploy to EC2
     - name: Deploy to EC2
       uses: appleboy/ssh-action@v1.0.3
       with:
-        host: ${{ secrets.EC2_HOST }}   # Elastic IP (IMPORTANT)
+        host: ${{ secrets.EC2_HOST }}   # ✅ Use Elastic IP
         username: ubuntu
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
@@ -58,15 +58,16 @@ jobs:
           docker stop app || true
           docker rm app || true
 
-          echo "Logging into ECR..."
+          echo "Login to ECR..."
           aws ecr get-login-password --region ap-south-1 \
-          | docker login --username AWS --password-stdin $ECR_REGISTRY
+          | docker login --username AWS --password-stdin 786769475575.dkr.ecr.ap-south-1.amazonaws.com
 
-          echo "Pulling latest image..."
-          docker pull $ECR_REGISTRY/$ECR_REPO:latest
+          echo "Pull latest image..."
+          docker pull 786769475575.dkr.ecr.ap-south-1.amazonaws.com/fullstack-devops-deployment:latest
 
-          echo "Starting new container..."
-          docker run -d --restart=always -p 80:5000 --name app $ECR_REGISTRY/$ECR_REPO:latest
+          echo "Run container..."
+          docker run -d --restart=always -p 80:5000 --name app \
+          786769475575.dkr.ecr.ap-south-1.amazonaws.com/fullstack-devops-deployment:latest
 
           echo "Container status:"
           docker ps -a
