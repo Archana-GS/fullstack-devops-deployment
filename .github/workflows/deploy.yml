@@ -48,15 +48,15 @@ jobs:
     - name: Deploy to EC2
       uses: appleboy/ssh-action@v1.0.3
       with:
-        host: ${{ secrets.EC2_HOST }}   # ✅ Use Elastic IP
+        host: ${{ secrets.EC2_HOST }}   # ✅ Elastic IP
         username: ubuntu
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
           set -e
 
-          echo "Stopping old container..."
-          docker stop app || true
-          docker rm app || true
+          echo "Cleaning old containers..."
+          docker stop $(docker ps -q) || true
+          docker rm $(docker ps -aq) || true
 
           echo "Login to ECR..."
           aws ecr get-login-password --region ap-south-1 \
