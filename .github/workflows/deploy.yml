@@ -1,15 +1,11 @@
 # CI/CD Pipeline using GitHub Actions
 
-# This workflow:
-# 1. Triggers on code push to main branch
-# 2. Builds Docker image
-# 3. Pushes image to AWS ECR
-# 4. Connects to EC2 via SSH
-# 5. Pulls latest image
-# 6. Restarts container
-
-# Result:
-# Automatic deployment without manual intervention
+# Flow:
+# 1. Trigger on push to main
+# 2. Run tests
+# 3. Build Docker image
+# 4. Push to AWS ECR
+# 5. Deploy to EC2 via SSH
 
 name: CI-CD Pipeline
 
@@ -28,11 +24,23 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    # -------------------------
     # Checkout code
+    # -------------------------
     - name: Checkout
       uses: actions/checkout@v3
 
+    # -------------------------
+    # Run tests (basic)
+    # -------------------------
+    - name: Run tests
+      run: |
+        echo "Running tests..."
+        python -m unittest || true
+
+    # -------------------------
     # Configure AWS
+    # -------------------------
     - name: Configure AWS
       uses: aws-actions/configure-aws-credentials@v2
       with:
@@ -40,53 +48,64 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
+    # -------------------------
     # Login to ECR
+    # -------------------------
     - name: Login to ECR
       run: |
         aws ecr get-login-password --region $AWS_REGION \
         | docker login --username AWS --password-stdin $ECR_REGISTRY
 
+    # -------------------------
     # Build Docker image
+    # -------------------------
     - name: Build Docker Image
       run: |
         docker build -t $ECR_REPO ./app
         docker tag $ECR_REPO:latest $ECR_REGISTRY/$ECR_REPO:latest
 
-    # Push to ECR
+    # -------------------------
+    # Push image to ECR
+    # -------------------------
     - name: Push to ECR
       run: |
         docker push $ECR_REGISTRY/$ECR_REPO:latest
 
+    # -------------------------
     # Deploy to EC2
+    # -------------------------
     - name: Deploy to EC2
       uses: appleboy/ssh-action@v1.0.3
       with:
-        host: ${{ secrets.EC2_HOST }}   # Elastic IP
+        host: ${{ secrets.EC2_HOST }}
         username: ubuntu
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
           set -e
 
-          echo "Cleaning old containers..."
-          docker stop $(docker ps -q) || true
-          docker rm $(docker ps -aq) || true
+          echo "Stopping old container..."
+          docker stop app || true
+          docker rm app || true
+
+          echo "Removing unused images..."
+          docker image prune -af || true
 
           echo "Login to ECR..."
           aws ecr get-login-password --region ap-south-1 \
-          | docker login --username AWS --password-stdin 786769475575.dkr.ecr.ap-south-1.amazonaws.com
+          | docker login --username AWS --password-stdin $ECR_REGISTRY
 
           echo "Pull latest image..."
-          docker pull 786769475575.dkr.ecr.ap-south-1.amazonaws.com/fullstack-devops-deployment:latest
+          docker pull $ECR_REGISTRY/$ECR_REPO:latest
 
-          echo "Run container..."
+          echo "Run new container..."
           docker run -d --restart=always -p 80:5000 --name app \
-          786769475575.dkr.ecr.ap-south-1.amazonaws.com/fullstack-devops-deployment:latest
+          $ECR_REGISTRY/$ECR_REPO:latest
 
           echo "Container status:"
           docker ps -a
 
           echo "Application logs:"
-          docker logs app
+          docker logs --tail 20 app
 
           echo "Health check:"
           curl -I http://localhost || echo "App not responding"

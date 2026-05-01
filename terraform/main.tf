@@ -8,9 +8,10 @@
 # - EC2 instance (runs Docker app)
 # - IAM Role (ECR access)
 # - Application Load Balancer (ALB)
+# - RDS PostgreSQL (database)
 
 # Flow:
-# ALB → EC2 → Docker Container → Flask App
+# ALB → EC2 → Docker Container → Flask App → RDS
 
 provider "aws" {
   region = var.region
@@ -99,6 +100,14 @@ resource "aws_security_group" "sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # Allow EC2 to access RDS
+  ingress {
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -158,36 +167,28 @@ resource "aws_instance" "app" {
 set -ex
 
 apt-get update -y
-
-apt-get install -y docker.io
+apt-get install -y docker.io unzip curl
 systemctl start docker
 systemctl enable docker
 
-apt-get install -y unzip curl
 curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
 unzip awscliv2.zip
 ./aws/install
 
 usermod -aG docker ubuntu
 
-# FIXED ECR LOGIN
 aws ecr get-login-password --region ${var.region} | docker login --username AWS --password-stdin 786769475575.dkr.ecr.ap-south-1.amazonaws.com
 
-# PULL & RUN
 docker pull ${var.ecr_repo_url}:latest
 docker run -d --restart=always -p 80:5000 ${var.ecr_repo_url}:latest
 EOF
 }
 
 # -------------------------
-# ELASTIC IP (STATIC PUBLIC IP)
+# ELASTIC IP
 # -------------------------
 resource "aws_eip" "app_eip" {
   instance = aws_instance.app.id
-
-  tags = {
-    Name = "app-eip"
-  }
 }
 
 # -------------------------
@@ -211,8 +212,7 @@ resource "aws_lb_target_group" "tg" {
 
   health_check {
     path = "/"
-    port = "traffic-port"
-    }
+  }
 }
 
 # -------------------------
@@ -243,9 +243,38 @@ resource "aws_lb_listener" "listener" {
 # -------------------------
 resource "aws_db_subnet_group" "db_subnet" {
   name = "db-subnet-group"
-
   subnet_ids = [
     aws_subnet.private_a.id,
     aws_subnet.private_b.id
   ]
+}
+
+# -------------------------
+# RDS INSTANCE (PostgreSQL)
+# -------------------------
+resource "aws_db_instance" "postgres" {
+  identifier           = "app-db"
+  engine               = "postgres"
+  instance_class       = "db.t3.micro"
+  allocated_storage    = 20
+  username             = "postgres"
+  password             = "postgres123"
+  db_subnet_group_name = aws_db_subnet_group.db_subnet.name
+  vpc_security_group_ids = [aws_security_group.sg.id]
+  skip_final_snapshot  = true
+}
+
+# -------------------------
+# OUTPUTS
+# -------------------------
+output "alb_dns" {
+  value = aws_lb.alb.dns_name
+}
+
+output "ec2_public_ip" {
+  value = aws_instance.app.public_ip
+}
+
+output "rds_endpoint" {
+  value = aws_db_instance.postgres.endpoint
 }
