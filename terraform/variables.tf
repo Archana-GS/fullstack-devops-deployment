@@ -1,3 +1,13 @@
+# Variables file for Terraform
+
+# This file defines configurable inputs such as:
+# - AMI ID
+# - Instance type
+# - AWS region
+# - ECR repository URL
+
+# Helps avoid hardcoding values and improves reusability
+
 variable "region" {
   default = "ap-south-1"
 }

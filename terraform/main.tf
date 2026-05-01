@@ -1,3 +1,17 @@
+# Terraform Configuration for AWS Infrastructure
+
+# This file provisions:
+# - VPC (network)
+# - Subnets (public/private)
+# - Internet Gateway
+# - Security Groups (ports 80 & 22)
+# - EC2 instance (runs Docker app)
+# - IAM Role (ECR access)
+# - Application Load Balancer (ALB)
+
+# Flow:
+# ALB → EC2 → Docker Container → Flask App
+
 provider "aws" {
   region = var.region
 }

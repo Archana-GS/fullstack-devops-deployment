@@ -1,3 +1,16 @@
+# CI/CD Pipeline using GitHub Actions
+
+# This workflow:
+# 1. Triggers on code push to main branch
+# 2. Builds Docker image
+# 3. Pushes image to AWS ECR
+# 4. Connects to EC2 via SSH
+# 5. Pulls latest image
+# 6. Restarts container
+
+# Result:
+# Automatic deployment without manual intervention
+
 name: CI-CD Pipeline
 
 on:
@@ -15,11 +28,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1️⃣ Checkout code
+    # Checkout code
     - name: Checkout
       uses: actions/checkout@v3
 
-    # 2️⃣ Configure AWS
+    # Configure AWS
     - name: Configure AWS
       uses: aws-actions/configure-aws-credentials@v2
       with:
@@ -27,28 +40,28 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    # 3️⃣ Login to ECR
+    # Login to ECR
     - name: Login to ECR
       run: |
         aws ecr get-login-password --region $AWS_REGION \
         | docker login --username AWS --password-stdin $ECR_REGISTRY
 
-    # 4️⃣ Build Docker image
+    # Build Docker image
     - name: Build Docker Image
       run: |
         docker build -t $ECR_REPO ./app
         docker tag $ECR_REPO:latest $ECR_REGISTRY/$ECR_REPO:latest
 
-    # 5️⃣ Push to ECR
+    # Push to ECR
     - name: Push to ECR
       run: |
         docker push $ECR_REGISTRY/$ECR_REPO:latest
 
-    # 6️⃣ Deploy to EC2
+    # Deploy to EC2
     - name: Deploy to EC2
       uses: appleboy/ssh-action@v1.0.3
       with:
-        host: ${{ secrets.EC2_HOST }}   # ✅ Elastic IP
+        host: ${{ secrets.EC2_HOST }}   # Elastic IP
         username: ubuntu
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
@@ -77,3 +90,4 @@ jobs:
 
           echo "Health check:"
           curl -I http://localhost || echo "App not responding"
+          

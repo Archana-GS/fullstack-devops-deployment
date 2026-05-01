@@ -1,1 +1,4 @@
+# Python dependencies required for the application
+# Installed during Docker build
+
 flask
