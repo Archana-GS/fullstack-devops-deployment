@@ -1,18 +1,3 @@
-# Terraform Configuration for AWS Infrastructure
-
-# This file provisions:
-# - VPC (network)
-# - Subnets (public/private)
-# - Internet Gateway
-# - Security Groups (ports 80 & 22)
-# - EC2 instance (runs Docker app)
-# - IAM Role (ECR access)
-# - Application Load Balancer (ALB)
-# - RDS PostgreSQL (database)
-
-# Flow:
-# ALB → EC2 → Docker Container → Flask App → RDS
-
 provider "aws" {
   region = var.region
 }
@@ -27,34 +12,19 @@ resource "aws_vpc" "main" {
 # -------------------------
 # SUBNETS
 # -------------------------
-resource "aws_subnet" "public_a" {
+resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.1.0/24"
-  availability_zone       = "ap-south-1a"
   map_public_ip_on_launch = true
 }
 
-resource "aws_subnet" "public_b" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.0.2.0/24"
-  availability_zone       = "ap-south-1b"
-  map_public_ip_on_launch = true
-}
-
-resource "aws_subnet" "private_a" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.3.0/24"
-  availability_zone = "ap-south-1a"
-}
-
-resource "aws_subnet" "private_b" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.4.0/24"
-  availability_zone = "ap-south-1b"
+resource "aws_subnet" "private" {
+  vpc_id     = aws_vpc.main.id
+  cidr_block = "10.0.2.0/24"
 }
 
 # -------------------------
-# INTERNET + ROUTING
+# INTERNET GATEWAY
 # -------------------------
 resource "aws_internet_gateway" "gw" {
   vpc_id = aws_vpc.main.id
@@ -70,20 +40,15 @@ resource "aws_route" "internet" {
   gateway_id             = aws_internet_gateway.gw.id
 }
 
-resource "aws_route_table_association" "public_a" {
-  subnet_id      = aws_subnet.public_a.id
-  route_table_id = aws_route_table.rt.id
-}
-
-resource "aws_route_table_association" "public_b" {
-  subnet_id      = aws_subnet.public_b.id
+resource "aws_route_table_association" "public" {
+  subnet_id      = aws_subnet.public.id
   route_table_id = aws_route_table.rt.id
 }
 
 # -------------------------
-# SECURITY GROUP
+# SECURITY GROUP (EC2)
 # -------------------------
-resource "aws_security_group" "sg" {
+resource "aws_security_group" "ec2_sg" {
   vpc_id = aws_vpc.main.id
 
   ingress {
@@ -99,182 +64,70 @@ resource "aws_security_group" "sg" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
+}
 
-  # Allow EC2 to access RDS
+# -------------------------
+# SECURITY GROUP (RDS) ⭐ FIXED
+# -------------------------
+resource "aws_security_group" "rds_sg" {
+  vpc_id = aws_vpc.main.id
+
   ingress {
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
-    cidr_blocks = ["10.0.0.0/16"]
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ec2_sg.id]
   }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
-
-# -------------------------
-# IAM ROLE (ECR ACCESS)
-# -------------------------
-resource "aws_iam_role" "ec2_role" {
-  name = "ec2-ecr-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = "ec2.amazonaws.com"
-      }
-    }]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "ecr" {
-  role       = aws_iam_role.ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-}
-
-resource "aws_iam_instance_profile" "profile" {
-  role = aws_iam_role.ec2_role.name
-}
-
-# -------------------------
-# KEY PAIR
-# -------------------------
-resource "aws_key_pair" "deployer" {
-  key_name   = "ec2-key"
-  public_key = file("ec2-key.pub")
 }
 
 # -------------------------
 # EC2 INSTANCE
 # -------------------------
 resource "aws_instance" "app" {
-  ami                    = var.ami
-  instance_type          = var.instance_type
-  subnet_id              = aws_subnet.public_a.id
-  vpc_security_group_ids = [aws_security_group.sg.id]
-  key_name               = aws_key_pair.deployer.key_name
-  iam_instance_profile   = aws_iam_instance_profile.profile.name
+  ami           = var.ami
+  instance_type = var.instance_type
+
+  subnet_id              = aws_subnet.public.id
+  vpc_security_group_ids = [aws_security_group.ec2_sg.id]
 
   user_data = <<-EOF
-#!/bin/bash
-set -ex
-
-apt-get update -y
-apt-get install -y docker.io unzip curl
-systemctl start docker
-systemctl enable docker
-
-curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-unzip awscliv2.zip
-./aws/install
-
-usermod -aG docker ubuntu
-
-aws ecr get-login-password --region ${var.region} | docker login --username AWS --password-stdin 786769475575.dkr.ecr.ap-south-1.amazonaws.com
-
-docker pull ${var.ecr_repo_url}:latest
-docker run -d --restart=always -p 80:5000 ${var.ecr_repo_url}:latest
-EOF
-}
-
-# -------------------------
-# ELASTIC IP
-# -------------------------
-resource "aws_eip" "app_eip" {
-  instance = aws_instance.app.id
-}
-
-# -------------------------
-# ALB
-# -------------------------
-resource "aws_lb" "alb" {
-  name               = "app-alb"
-  load_balancer_type = "application"
-  subnets            = [aws_subnet.public_a.id, aws_subnet.public_b.id]
-  security_groups    = [aws_security_group.sg.id]
-}
-
-# -------------------------
-# TARGET GROUP
-# -------------------------
-resource "aws_lb_target_group" "tg" {
-  name     = "app-tg"
-  port     = 80
-  protocol = "HTTP"
-  vpc_id   = aws_vpc.main.id
-
-  health_check {
-    path = "/"
-  }
-}
-
-# -------------------------
-# ATTACH EC2
-# -------------------------
-resource "aws_lb_target_group_attachment" "attach" {
-  target_group_arn = aws_lb_target_group.tg.arn
-  target_id        = aws_instance.app.id
-  port             = 80
-}
-
-# -------------------------
-# LISTENER
-# -------------------------
-resource "aws_lb_listener" "listener" {
-  load_balancer_arn = aws_lb.alb.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.tg.arn
-  }
+              #!/bin/bash
+              apt-get update -y
+              apt-get install -y docker.io
+              systemctl start docker
+              systemctl enable docker
+              EOF
 }
 
 # -------------------------
 # RDS SUBNET GROUP
 # -------------------------
-resource "aws_db_subnet_group" "db_subnet" {
-  name = "db-subnet-group"
-  subnet_ids = [
-    aws_subnet.private_a.id,
-    aws_subnet.private_b.id
-  ]
+resource "aws_db_subnet_group" "db" {
+  name       = "db-subnet-group"
+  subnet_ids = [aws_subnet.private.id]
 }
 
 # -------------------------
-# RDS INSTANCE (PostgreSQL)
+# RDS POSTGRESQL ⭐ FINAL FIXED VERSION
 # -------------------------
 resource "aws_db_instance" "postgres" {
-  identifier           = "app-db"
-  engine               = "postgres"
-  instance_class       = "db.t3.micro"
-  allocated_storage    = 20
-  username             = "postgres"
-  password             = "postgres123"
-  db_subnet_group_name = aws_db_subnet_group.db_subnet.name
-  vpc_security_group_ids = [aws_security_group.sg.id]
-  skip_final_snapshot  = true
-}
+  identifier        = "app-db"
+  engine            = "postgres"
+  engine_version    = "15"
+  instance_class    = "db.t3.micro"
 
-# -------------------------
-# OUTPUTS
-# -------------------------
-output "alb_dns" {
-  value = aws_lb.alb.dns_name
-}
+  allocated_storage = 20
 
-output "ec2_public_ip" {
-  value = aws_instance.app.public_ip
-}
+  db_name  = "appdb"
+  username = var.db_username
+  password = var.db_password
 
-output "rds_endpoint" {
-  value = aws_db_instance.postgres.endpoint
+  db_subnet_group_name   = aws_db_subnet_group.db.name
+  vpc_security_group_ids = [aws_security_group.rds_sg.id]
+
+  publicly_accessible     = false
+  storage_encrypted       = true
+  backup_retention_period = 7
+
+  skip_final_snapshot = true
 }
