@@ -1,5 +1,4 @@
 region        = "ap-south-1"
 instance_type = "t3.micro"
 ecr_repo_url  = "your-ecr-repo-url"
-db_username = "postgres"
-db_password = "postgres123"
+db_password   = "your-db-password"
